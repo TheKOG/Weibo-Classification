@@ -4,6 +4,8 @@
 
 使用流程:
 
+0.下载[model.pth](https://github.com/TheKOG/Weibo-Classification/releases/tag/model.pth)并放入ImgCap文件夹
+
 1.将爬取的微博数据放入input_csv中
 
 2.运行create_input.py
