@@ -2,6 +2,8 @@ import jieba
 import jieba.posseg as psg
 import re
 from tqdm import tqdm
+import json
+
 def load_stop_words(stop_file='data/stopwords.txt'):
     try:
         stopword_list = open(stop_file,encoding ='utf-8')
@@ -27,17 +29,17 @@ def chinese_word_cut(mytext,stop_dict=[]):
             word_list.append(word)
     return (" ").join(word_list)
 
-def Create_Cutted(data_pth='data/csv.txt',dic_file='data/dict.txt',stop_file='data/stopwords.txt',out_pth='data/cutted.txt'):
+def Create_Cutted(data_pth='input/docs.json',dic_file='data/dict.txt',stop_file='data/stopwords.txt',out_pth='data/cutted.txt'):
     out=open(out_pth,'w',encoding='utf-8')
     jieba.load_userdict(dic_file)
     jieba.initialize()
     stop_dict=load_stop_words(stop_file)
     with open(data_pth,'r',encoding='utf-8') as f:
-        lines=f.readlines()
-        for i,line in enumerate(tqdm(lines,"Tokenizing")):
-            if(line==''):
-                continue
-            out.write(chinese_word_cut(line,stop_dict)+'\n')
-            out.flush()
-            line=f.readline()
+        doc_json=json.load(f)
+    lines=doc_json['doc']
+    for i,line in enumerate(tqdm(lines,"Tokenizing")):
+        if(line==''):
+            continue
+        out.write(chinese_word_cut(line,stop_dict)+'\n')
+        out.flush()
     out.close()

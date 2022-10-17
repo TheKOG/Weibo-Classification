@@ -1,43 +1,49 @@
-from sklearn.feature_extraction.text import TfidfVectorizer
+import torch
 import json
+from sklearn.feature_extraction.text import TfidfVectorizer
+from tqdm import tqdm
 from scipy import spatial
-from LDA import LDA
-from kmeans import k_means
-import os
 
-d2p={}
-pdocs=[]
-p2t={}
-topic_name={}
-topic_tf=[]
-classified={}
-cutted=[]
+topic={}
+class Kmeans(object):
+    def __init__(self,k,n_voc):
+        self.k=k
+        self.n=n_voc
+        self.topics=torch.rand(k,n_voc)
+        self.topics.requires_grad_(True)
+        # self.topics.retain_grad()
+        # print(self.topics.is_leaf)
 
-def Validate(psum=500,logpth="output/ptm_log.txt",outpth="output/ptm_result.json"):
-    pdocs=["" for i in range(psum)]
-    with open('input/docs.json','r',encoding='utf-8') as f:
-        doc_json=json.load(f)
-    doc_topic,doc_id=doc_json['topic'],doc_json['id']
-    print(len(doc_topic))
-    print(len(doc_id))
-    with open('input/cutted.txt','r',encoding='utf-8') as f:
-        lines=f.readlines()
-        for line in lines:
-            if line!='':
-                cutted.append(line)
-    print(len(cutted))
-    with open('ptm_result/model-final.assign1') as f:
-        lines=f.readlines()
-        for i,line in enumerate(lines):
-            if line=='':
-                break
-            val=int(line.strip('\n').strip())
-            # print("{0} {1} {2} {3} {4}".format(psum,val,i,len(docs),cutted[i]))
-            d2p[i]=val
-            if pdocs[val]=='':
-                pdocs[val]=cutted[i].strip()
-            else:
-                pdocs[val]+=" "+cutted[i].strip()
+    def forward(self,x):
+        ret=torch.Tensor(x.size()[0])
+        # print(x.size()[0])
+        for i in range(x.size()[0]):
+            row=x[i]
+            out=((self.topics-row)**2).sum(1).sqrt()
+            # print(out.argmin())
+            topic[i]=out.argmin().item()
+            ret[i]=out.min()
+        # print(ret)
+        return ret.mean()
+    
+    def Learn(self,input,lr=0.02,step=200):
+        input=torch.Tensor(input)
+        for i,i in enumerate(tqdm(range(step),desc="Learning")):
+            y=self.forward(input)
+            y.backward(retain_graph=True)
+            # print(y)
+            # print(self.topics.is_leaf)
+            with torch.autograd.no_grad():
+                # print(self.topics.grad)
+                self.topics-=self.topics.grad*lr
+                self.topics.grad.zero_()
+
+def Load():
+    global docs
+    global doc_topic
+    global doc_id
+    global voc
+    global doc_mat
     voc={}
     rev={}
     with open('data/topic_words.txt',encoding='utf-8') as f:
@@ -49,6 +55,42 @@ def Validate(psum=500,logpth="output/ptm_log.txt",outpth="output/ptm_result.json
             rev[id]=v
             line=f.readline()
         f.close()
+    
+    with open('input/docs.json','r',encoding='utf-8') as f:
+        doc_json=json.load(f)
+    doc_topic,doc_id=doc_json['topic'],doc_json['id']
+    
+    docs=[]
+
+    with open('input/cutted.txt','r',encoding='utf-8') as f:
+        lines=f.readlines()
+        for line in lines:
+            if line!='':
+                docs.append(line)
+    
+    vectorizer=TfidfVectorizer(vocabulary=voc,sublinear_tf=True)
+    doc_mat=vectorizer.fit_transform(docs)
+    doc_mat=doc_mat.toarray()
+
+d2p={}
+pdocs=[]
+p2t={}
+topic_name={}
+topic_tf=[]
+
+def Validate(psum=100,logpth="output/kmeans_log.txt"):
+    pdocs=["" for i in range(psum)]
+    with open('kmeans_result/topics.txt') as f:
+        lines=f.readlines()
+        for i,line in enumerate(lines):
+            if line=='':
+                break
+            val=int(line.strip('\n').strip())
+            d2p[i]=val
+            if pdocs[val]=='':
+                pdocs[val]=docs[i].strip()
+            else:
+                pdocs[val]+=" "+docs[i].strip()
     vectorizer=TfidfVectorizer(vocabulary=voc,sublinear_tf=True)
     
     with open('data/topics.name',encoding='utf-8') as f:
@@ -82,13 +124,10 @@ def Validate(psum=500,logpth="output/ptm_log.txt",outpth="output/ptm_result.json
     FP={}
     TN={}
     FN={}
-    n_doc=len(cutted)
+    n_doc=len(docs)
     for i in range(n_doc):
         real=doc_topic[i]
         esti=p2t[d2p[i]]
-        if esti not in classified:
-            classified[esti]=[]
-        classified[esti].append(doc_id[i])
         if real=='unknown':
             continue
         for ele in [real,esti]:
@@ -126,22 +165,19 @@ def Validate(psum=500,logpth="output/ptm_log.txt",outpth="output/ptm_result.json
         F1_+=F1[topic]
         f.write('Topic:{0} Precision={1},Recall={2},Accuracy={3},F1 score={4}\n'.format(topic,percision[topic],recall[topic],accuracy[topic],F1[topic]))
 
-    percision_/=tot
-    recall_/=tot
-    accuracy_/=tot
-    F1_/=tot
+    percision_=percision_/tot
+    recall_=recall_/tot
+    accuracy_=accuracy_/tot
+    F1_=F1_/tot
     f.write('Average: Precision={0},Recall={1},Accuracy={2},F1 score={3}\n'.format(percision_,recall_,accuracy_,F1_))
-    
-    with open(outpth,"w",encoding='utf-8') as f:
-        json.dump(classified,f)
+
+def k_means(psum=100):
+    Load()
+    kmeans=Kmeans(psum,len(voc))
+    kmeans.Learn(doc_mat)
+    with open("kmeans_result/topics.txt",'w',encoding='utf-8') as f:
+        for i in range(len(docs)):
+            f.write(str(topic[i])+'\n')
+            f.flush()
         f.close()
-
-
-if __name__=='__main__':
-    psum=500
-    ksum=100
-    niters=100
-    os.system("java ptm.java {0} {1} {2}".format(psum,ksum,niters))
     Validate(psum)
-    LDA(psum)
-    k_means(psum=100)
